@@ -1,0 +1,381 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   
+      <!--
+This HTML is auto-generated from an M-file.
+To make changes, update the M-file and republish this document.
+      -->
+      <title>Example: Signal separation using dual basis pursuit (Example 1)</title>
+      <meta name="generator" content="MATLAB 7.8">
+      <meta name="date" content="2012-05-24">
+      <meta name="m-file" content="Example_dualBP_1"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head>
+   <body>
+      <div class="content">
+         <h1>Example: Signal separation using dual basis pursuit (Example 1)</h1>
+         <!--introduction-->
+         <p>Decompose a signal (spikes plus sinusoids) in to two signals: spikes alone and sinusoids alone. The example illustrated 'morphological
+            component analysis' (MCA) using dual basis pursuit.
+         </p><pre>Ivan Selesnick
+NYU-Poly
+selesi@poly.edu
+2011</pre>
+         <!--/introduction--><h2>Contents</h2>
+         <div>
+            <ul>
+               <li><a href="#1">Start</a></li>
+               <li><a href="#2">Create signal</a></li>
+               <li><a href="#3">Define the two Parseval transforms</a></li>
+               <li><a href="#6">Peform signal separation</a></li>
+               <li><a href="#8">Calculate signal components</a></li>
+            </ul>
+         </div>
+         <h2>Start<a name="1"></a></h2><pre class="codeinput">clear
+close <span class="string">all</span>
+MyGraphPrefsON
+
+printme = @(filename) print(<span class="string">'-deps'</span>, sprintf(<span class="string">'figures/Example_dualBP_1_%s'</span>, filename) );
+
+I = sqrt(-1);
+</pre><h2>Create signal<a name="2"></a></h2>
+         <p>The simulated signal contains two spikes and two sinusoids.</p><pre class="codeinput">M = 150;                                <span class="comment">% M : signal length</span>
+m = (0:M-1)';
+y = cos(0.1*pi*m) + cos(0.15*pi*m);     <span class="comment">% sinusoids</span>
+y = y/1.5;
+y = y + 3*(m == 50);                    <span class="comment">% spikes</span>
+y = y - 3*(m == 70);
+ymax = max(abs(y));
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(m, y);
+xlim([0 M])
+ylim([-ymax ymax])
+box <span class="string">off</span>
+mytitle(<span class="string">'Signal'</span>);
+xlabel(<span class="string">' '</span>)
+
+printme(<span class="string">'signal'</span>)
+</pre><img vspace="5" hspace="5" src="Example_dualBP_1_01.png" alt=""> <h2>Define the two Parseval transforms<a name="3"></a></h2>
+         <p>Define tramsforms A1 and A2 such that A1*A1T = p1*Identity, and A2*A2T = p2*Identity.</p><pre class="codeinput"><span class="comment">% A1 : identity</span>
+A1 = @(x) x;
+A1T = @(x) x;
+p1 = 1;
+
+<span class="comment">% A2 : over-sampled DFT (normalized so that Parseval frame constant is 1.)</span>
+N = M;
+N = 256;
+A2 = @(x) A(x,M,N)/sqrt(N);
+A2T = @(x) AT(x,M,N)/sqrt(N);
+p2 = 1;
+</pre><p>Verify Parseval energy identity</p><pre class="codeinput">E = sum(abs(y(:)).^2);
+c1 = A1T(y);
+c2 = A2T(y);
+E1 = sum(abs(c1(:)).^2);
+E2 = sum(abs(c2(:)).^2);
+fprintf(<span class="string">'Signal energy = %.3e\n'</span>, E)
+fprintf(<span class="string">'Transform 1 energy = %.3e\n'</span>, E1/p1)
+fprintf(<span class="string">'Transform 2 energy = %.3e\n'</span>, E2/p2)
+
+<span class="comment">% The energy is the same with both transforms (and the same as the signal energy).</span>
+</pre><pre class="codeoutput">Signal energy = 8.197e+01
+Transform 1 energy = 8.197e+01
+Transform 2 energy = 8.197e+01
+</pre><p>Verify perfect reconstruction property</p><pre class="codeinput">err = p1*y - A1(c1);
+fprintf(<span class="string">'Transform A1 : maximum reconstruction error = %g\n'</span>, max(abs(err(:))))
+
+err = p2*y - A2(c2);
+fprintf(<span class="string">'Transform A2 : maximum reconstruction error = %g\n'</span>, max(abs(err(:))))
+</pre><pre class="codeoutput">Transform A1 : maximum reconstruction error = 0
+Transform A2 : maximum reconstruction error = 4.44089e-16
+</pre><h2>Peform signal separation<a name="6"></a></h2>
+         <p>Use the command 'dualBP' (dual basis pursuit) to separate the signal into two distinct components.</p><pre class="codeinput">theta = 0.6;                <span class="comment">% theta : trade-off parameter</span>
+Nit = 100;                  <span class="comment">% Nit : number of iterations</span>
+mu1 = 1.5;                  <span class="comment">% mu1, mu2 : ADMM parameters</span>
+mu2 = 1.0;
+
+[y1,y2,c1,c2,costfn] = dualBP(y, A1, A1T, p1, A2, A2T, p2, theta, 1-theta, mu1, mu2, Nit);
+</pre><p>Display cost function</p><pre class="codeinput">figure(2)
+clf
+it1 = 1;
+plot(1:Nit, costfn)
+xlim([0 Nit])
+box <span class="string">off</span>
+title(<span class="string">'Cost function'</span>)
+xlabel(<span class="string">'Iteration'</span>)
+</pre><img vspace="5" hspace="5" src="Example_dualBP_1_02.png" alt=""> <h2>Calculate signal components<a name="8"></a></h2>
+         <p>The two components y1 and y2 can be found by applying the transforms to the coefficients c1 and c2 produced by the dual basis
+            pursuit algorithhm.
+         </p><pre class="codeinput">y1 = A1(c1);
+y2 = A2(c2);
+
+<span class="comment">% Verify that y = y1 + y2</span>
+fprintf(<span class="string">'Maximum of residual = %g\n'</span>, max(abs(y - y1 - y2)))
+</pre><pre class="codeoutput">Maximum of residual = 4.44089e-16
+</pre><p>Display signal components obtained using dual BP</p><pre class="codeinput">figure(3)
+clf
+subplot(2,1,1)
+plot(m, real(y1))
+xlim([0 M])
+mytitle(<span class="string">'Component 1'</span>);
+box <span class="string">off</span>
+
+subplot(2,1,2)
+plot(m, real(y2))
+xlim([0 M])
+box <span class="string">off</span>
+mytitle(<span class="string">'Component 2'</span>);
+xlabel(<span class="string">' '</span>)
+
+printme(<span class="string">'components'</span>)
+</pre><img vspace="5" hspace="5" src="Example_dualBP_1_03.png" alt=""> <p>It can be seen that the coefficients are sparse.</p><pre class="codeinput">figure(4)
+clf
+subplot(2,1,1)
+stem(c1, <span class="string">'marker'</span>, <span class="string">'none'</span>)
+box <span class="string">off</span>
+mytitle(<span class="string">'Coefficients c1'</span>);
+
+subplot(2,1,2)
+stem(abs(c2), <span class="string">'marker'</span>, <span class="string">'none'</span>)
+mytitle(<span class="string">'Coefficients c2'</span>);
+box <span class="string">off</span>
+xlim([0 N])
+xlabel(<span class="string">' '</span>)
+printme(<span class="string">'coefficients'</span>)
+</pre><img vspace="5" hspace="5" src="Example_dualBP_1_04.png" alt=""> <pre class="codeinput">MyGraphPrefsOFF
+</pre><p class="footer"><br>
+            Published with MATLAB&reg; 7.8<br></p>
+      </div>
+      <!--
+##### SOURCE BEGIN #####
+%% Example: Signal separation using dual basis pursuit (Example 1)
+% Decompose a signal (spikes plus sinusoids) in to two signals:
+% spikes alone and sinusoids alone.
+% The example illustrated 'morphological component analysis' (MCA)
+% using dual basis pursuit.
+%
+%  Ivan Selesnick
+% NYU-Poly
+% selesi@poly.edu
+% 2011
+
+%% Start
+
+clear
+close all
+MyGraphPrefsON
+
+printme = @(filename) print('-deps', sprintf('figures/Example_dualBP_1_%s', filename) );
+
+I = sqrt(-1);
+
+
+%% Create signal
+% The simulated signal contains two spikes and two sinusoids.
+
+M = 150;                                % M : signal length
+m = (0:M-1)';
+y = cos(0.1*pi*m) + cos(0.15*pi*m);     % sinusoids
+y = y/1.5;
+y = y + 3*(m == 50);                    % spikes
+y = y - 3*(m == 70);
+ymax = max(abs(y));
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(m, y);
+xlim([0 M])
+ylim([-ymax ymax])
+box off
+mytitle('Signal');
+xlabel(' ')
+
+printme('signal')
+
+%% Define the two Parseval transforms
+% Define tramsforms A1 and A2 such that 
+% A1*A1T = p1*Identity, and
+% A2*A2T = p2*Identity.
+
+% A1 : identity
+A1 = @(x) x;
+A1T = @(x) x;
+p1 = 1;
+
+% A2 : over-sampled DFT (normalized so that Parseval frame constant is 1.)
+N = M;
+N = 256;
+A2 = @(x) A(x,M,N)/sqrt(N);
+A2T = @(x) AT(x,M,N)/sqrt(N);
+p2 = 1;
+
+%%
+% Verify Parseval energy identity
+
+E = sum(abs(y(:)).^2);
+c1 = A1T(y);
+c2 = A2T(y);
+E1 = sum(abs(c1(:)).^2);
+E2 = sum(abs(c2(:)).^2);
+fprintf('Signal energy = %.3e\n', E)
+fprintf('Transform 1 energy = %.3e\n', E1/p1)
+fprintf('Transform 2 energy = %.3e\n', E2/p2)
+
+% The energy is the same with both transforms (and the same as the signal energy).
+
+%%
+% Verify perfect reconstruction property
+
+err = p1*y - A1(c1);
+fprintf('Transform A1 : maximum reconstruction error = %g\n', max(abs(err(:))))
+
+err = p2*y - A2(c2);
+fprintf('Transform A2 : maximum reconstruction error = %g\n', max(abs(err(:))))
+
+
+
+%% Peform signal separation
+% Use the command 'dualBP' (dual basis pursuit) to separate the signal into
+% two distinct components.
+
+theta = 0.6;                % theta : trade-off parameter
+Nit = 100;                  % Nit : number of iterations
+mu1 = 1.5;                  % mu1, mu2 : ADMM parameters
+mu2 = 1.0;
+
+[y1,y2,c1,c2,costfn] = dualBP(y, A1, A1T, p1, A2, A2T, p2, theta, 1-theta, mu1, mu2, Nit);
+
+
+%%
+% Display cost function
+
+figure(2)
+clf
+it1 = 1;
+plot(1:Nit, costfn)
+xlim([0 Nit])
+box off
+title('Cost function')
+xlabel('Iteration')
+
+
+%% Calculate signal components
+% The two components y1 and y2 can be found by applying
+% the transforms to the coefficients c1 and c2 produced
+% by the dual basis pursuit algorithhm.
+
+y1 = A1(c1);
+y2 = A2(c2);
+
+% Verify that y = y1 + y2
+fprintf('Maximum of residual = %g\n', max(abs(y - y1 - y2)))
+
+%% 
+% Display signal components obtained using dual BP
+
+figure(3)
+clf
+subplot(2,1,1)
+plot(m, real(y1))
+xlim([0 M])
+mytitle('Component 1');
+box off
+
+subplot(2,1,2)
+plot(m, real(y2))
+xlim([0 M])
+box off
+mytitle('Component 2');
+xlabel(' ')
+
+printme('components')
+
+%%
+% It can be seen that the coefficients are sparse.
+
+figure(4)
+clf
+subplot(2,1,1)
+stem(c1, 'marker', 'none')
+box off
+mytitle('Coefficients c1');
+
+subplot(2,1,2)
+stem(abs(c2), 'marker', 'none')
+mytitle('Coefficients c2');
+box off
+xlim([0 N])
+xlabel(' ')
+printme('coefficients')
+
+
+%%
+
+MyGraphPrefsOFF
+
+
+##### SOURCE END #####
+-->
+   </body>
+</html>

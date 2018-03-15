@@ -1,0 +1,395 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   
+      <!--
+This HTML is auto-generated from an M-file.
+To make changes, update the M-file and republish this document.
+      -->
+      <title>Example: Basis pursuit (BP)</title>
+      <meta name="generator" content="MATLAB 7.8">
+      <meta name="date" content="2012-05-24">
+      <meta name="m-file" content="Example_BP"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head>
+   <body>
+      <div class="content">
+         <h1>Example: Basis pursuit (BP)</h1>
+         <!--introduction-->
+         <p>In this example, we obtain frequency-domain coefficients of a sinusoid using three methods:</p>
+         <div>
+            <ol>
+               <li>Discrete Fourier transform (DFT)</li>
+               <li>Oversampled DFT (least square solution)</li>
+               <li>Oversampled DFT (basis pursuit solution)</li>
+            </ol>
+         </div>
+         <p>As illustrated in the example, the coefficients obtained using basis pursuit are sparse and do not exhibit the leakage phenomenon.</p><pre>Ivan Selesnick
+NYU-Poly
+selesi@poly.edu
+March 2012</pre>
+         <!--/introduction--><h2>Contents</h2>
+         <div>
+            <ul>
+               <li><a href="#1">Start</a></li>
+               <li><a href="#2">function 'A'</a></li>
+               <li><a href="#3">function 'AT'</a></li>
+               <li><a href="#4">Perfect reconstruction</a></li>
+               <li><a href="#5">Create signal</a></li>
+               <li><a href="#6">Spectrum (using DFT)</a></li>
+               <li><a href="#7">Oversampled DFT: Least squares</a></li>
+               <li><a href="#9">Oversampled DFT: Basis pursuit</a></li>
+            </ul>
+         </div>
+         <h2>Start<a name="1"></a></h2><pre class="codeinput">close <span class="string">all</span>
+clear
+MyGraphPrefsON
+I = sqrt(-1);
+
+printme = @(txt) print(<span class="string">'-deps'</span>, sprintf(<span class="string">'figures/Example_BP_%s'</span>,txt));
+</pre><h2>function 'A'<a name="2"></a></h2>
+         <p>The function 'A' maps an N-point coefficient vector c to an M-point signal y (where M &lt;= N).</p><pre class="codeinput">type <span class="string">A</span>
+</pre><pre class="codeoutput">
+function y = A(c, M, N)
+    v = N * ifft(c);
+    y = v(1:M);
+end
+</pre><h2>function 'AT'<a name="3"></a></h2>
+         <p>The function 'AT' maps an M-point signal y to an N-point coefficient vector c (where M &lt;= N). 'AT' is the complex conjugate
+            transpose of 'A'.
+         </p><pre class="codeinput">type <span class="string">AT</span>
+</pre><pre class="codeoutput">
+function c = AT(y, M, N)
+    c = fft([y; zeros(N-M, 1)]);
+end
+</pre><h2>Perfect reconstruction<a name="4"></a></h2>
+         <p>Verify the perfect reconstruction property of A and AT. (Show that A*AT = N*identity)</p><pre class="codeinput">M = 100;
+N = 256;
+y = rand(M,1);
+c = (1/N)*AT(y, M, N);
+y2 = A(c, M, N);
+recon_err = y2 - y;   <span class="comment">% recon_err : reconstruction error</span>
+
+fprintf(<span class="string">'Maximum reconstruction error : %g\n'</span>, max(recon_err))
+</pre><pre class="codeoutput">Maximum reconstruction error : 4.44089e-16
+</pre><h2>Create signal<a name="5"></a></h2>
+         <p>The signal consists of 100 points of a complex sinusoid.</p><pre class="codeinput">M = 100;
+m = (0:M-1)';
+
+f1 = 10.5;
+x = exp(I*2*pi*f1/M*m);             <span class="comment">% x : signal</span>
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(m, real(x), m, imag(x),<span class="string">'--'</span>)
+xlabel(<span class="string">'Time (samples)'</span>)
+mytitle(<span class="string">'Signal'</span>);
+legend(<span class="string">'Real part'</span>,<span class="string">'Imaginary part'</span>)
+box <span class="string">off</span>
+ylim1 = [-1.4 1.8];
+ylim(ylim1)
+printme(<span class="string">'signal'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BP_01.png" alt=""> <h2>Spectrum (using DFT)<a name="6"></a></h2>
+         <p>Compute the DFT of the signal. Note that the spectrum (DFT) of the signal exhibits leakage. This is because the signal consists
+            of 10.5 cycles of a sinusoid (not a whole number of cycles).
+         </p><pre class="codeinput">X = fft(x);                         <span class="comment">% X : DFT of x</span>
+
+subplot(2,1,1)
+stem(m,abs(X),<span class="string">'marker'</span>,<span class="string">'none'</span>)
+xlabel(<span class="string">'Frequency (DFT index)'</span>)
+mytitle(<span class="string">'(A) Fourier coefficients (DFT)'</span>);
+box <span class="string">off</span>
+printme(<span class="string">'DFT'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BP_02.png" alt=""> <h2>Oversampled DFT: Least squares<a name="7"></a></h2>
+         <p>Compute the oversampled DFT of the signal using function 'AT'. Note that the obtained spectrum exhibits leakage again. Because
+            the oversampled DFT is a Parseval frame, the least square solution is obtained by the conjugate transpose (and normalization
+            by N).
+         </p><pre class="codeinput">N = 256;
+X = (1/N)*AT(x,M,N);
+
+figure(2)
+clf
+subplot(2,1,1)
+stem(abs(X),<span class="string">'marker'</span>,<span class="string">'none'</span>)
+mytitle(<span class="string">'(B) Fourier coefficients (least square solution)'</span>);
+xlabel(<span class="string">'Frequency (index)'</span>)
+box <span class="string">off</span>
+xlim([0 N])
+printme(<span class="string">'LeastSquares'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BP_03.png" alt=""> <p>Verify reconstruction of least square solution</p><pre class="codeinput">err = x - A(X,M,N);
+err_max = max(abs(err));
+fprintf(<span class="string">'Least squares: Maximum reconstruction error = %g\n'</span>, err_max);
+</pre><pre class="codeoutput">Least squares: Maximum reconstruction error = 5.55805e-16
+</pre><h2>Oversampled DFT: Basis pursuit<a name="9"></a></h2><pre class="codeinput"><span class="comment">% Define functions (Matlab function handles)</span>
+H = @(x) A(x,M,N);
+HT = @(x) AT(x,M,N);
+
+<span class="comment">% Define algorithm parameters</span>
+p = N;                  <span class="comment">% p : Parseval constant</span>
+Nit = 100;              <span class="comment">% Nit : number of iterations</span>
+mu = 5;                 <span class="comment">% mu : ADMM parameter</span>
+
+<span class="comment">% Run basis pursuit algorithm</span>
+[c, cost] = bp_salsa(x, H, HT, p, mu, Nit);
+</pre><p>Verify reconstruction of basis pursuit solution</p><pre class="codeinput">err = x - A(c,M,N);
+err_max = max(abs(err));
+fprintf(<span class="string">'Basis pursuit: Maximum reconstruction error = %g\n'</span>, err_max);
+</pre><pre class="codeoutput">Basis pursuit: Maximum reconstruction error = 1.26585e-15
+</pre><p>Display cost function history of basis pursuit algorithm</p><pre class="codeinput">figure(1)
+clf
+subplot(3,3,[1 2 4 5])
+plot(cost)
+mytitle(<span class="string">'Cost function history'</span>);
+xlabel(<span class="string">'Iteration'</span>)
+it1 = 4;
+del = cost(it1) - min(cost);
+ylim([min(cost)-0.1*del cost(it1)])
+xlim([0 Nit])
+box <span class="string">off</span>
+printme(<span class="string">'CostFunction'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BP_04.png" alt=""> <p>Display Fourier coefficients obtained by basis pursuit</p><pre class="codeinput">figure(2)
+clf
+subplot(2,1,1)
+stem(0:N-1, abs(c), <span class="string">'marker'</span>,<span class="string">'none'</span>)
+mytitle(<span class="string">'(C) Fourier coefficients (basis pursuit solution)'</span>);
+xlabel(<span class="string">'Frequency (index)'</span>)
+box <span class="string">off</span>
+xlim([0 N])
+printme(<span class="string">'BasisPursuit'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BP_05.png" alt=""> <pre class="codeinput">MyGraphPrefsOFF
+</pre><p class="footer"><br>
+            Published with MATLAB&reg; 7.8<br></p>
+      </div>
+      <!--
+##### SOURCE BEGIN #####
+%% Example: Basis pursuit (BP)
+% In this example, we obtain frequency-domain coefficients of a sinusoid
+% using three methods:
+%
+% # Discrete Fourier transform (DFT)
+% # Oversampled DFT (least square solution)
+% # Oversampled DFT (basis pursuit solution)
+%
+% As illustrated in the example, the coefficients obtained using
+% basis pursuit are sparse and do not exhibit the leakage phenomenon.
+%
+%  Ivan Selesnick
+% NYU-Poly
+% selesi@poly.edu
+% March 2012
+
+%% Start
+
+close all
+clear
+MyGraphPrefsON
+I = sqrt(-1);
+
+printme = @(txt) print('-deps', sprintf('figures/Example_BP_%s',txt));
+
+
+%% function 'A'
+% The function 'A' maps an N-point coefficient vector c
+% to an M-point signal y (where M <= N).
+
+type A
+
+%% function 'AT'
+% The function 'AT' maps an M-point signal y to an N-point coefficient
+% vector c (where M <= N).
+% 'AT' is the complex conjugate transpose of 'A'.
+
+type AT
+
+%% Perfect reconstruction
+% Verify the perfect reconstruction property of A and AT.
+% (Show that A*AT = N*identity)
+
+M = 100;
+N = 256;
+y = rand(M,1);
+c = (1/N)*AT(y, M, N);
+y2 = A(c, M, N);
+recon_err = y2 - y;   % recon_err : reconstruction error
+
+fprintf('Maximum reconstruction error : %g\n', max(recon_err))
+
+
+%% Create signal
+% The signal consists of 100 points of a complex sinusoid.
+
+M = 100;
+m = (0:M-1)';
+
+f1 = 10.5;
+x = exp(I*2*pi*f1/M*m);             % x : signal
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(m, real(x), m, imag(x),'REPLACE_WITH_DASH_DASH')
+xlabel('Time (samples)')
+mytitle('Signal');
+legend('Real part','Imaginary part')
+box off
+ylim1 = [-1.4 1.8];
+ylim(ylim1)
+printme('signal')
+
+%% Spectrum (using DFT)
+% Compute the DFT of the signal.
+% Note that the spectrum (DFT) of the signal exhibits leakage.
+% This is because the signal consists of 10.5 cycles of a sinusoid (not a whole number of cycles).
+
+X = fft(x);                         % X : DFT of x
+
+subplot(2,1,1)
+stem(m,abs(X),'marker','none')
+xlabel('Frequency (DFT index)')
+mytitle('(A) Fourier coefficients (DFT)');
+box off
+printme('DFT')
+
+%% Oversampled DFT: Least squares
+% Compute the oversampled DFT of the signal using function 'AT'.
+% Note that the obtained spectrum exhibits leakage again.
+% Because the oversampled DFT is a Parseval frame, the
+% least square solution is obtained by the conjugate transpose (and normalization by N).
+
+N = 256;
+X = (1/N)*AT(x,M,N);
+
+figure(2)
+clf
+subplot(2,1,1)
+stem(abs(X),'marker','none')
+mytitle('(B) Fourier coefficients (least square solution)');
+xlabel('Frequency (index)')
+box off
+xlim([0 N])
+printme('LeastSquares')
+
+%%
+% Verify reconstruction of least square solution
+
+err = x - A(X,M,N);
+err_max = max(abs(err));
+fprintf('Least squares: Maximum reconstruction error = %g\n', err_max);
+
+%% Oversampled DFT: Basis pursuit
+
+% Define functions (Matlab function handles)
+H = @(x) A(x,M,N);
+HT = @(x) AT(x,M,N);
+
+% Define algorithm parameters
+p = N;                  % p : Parseval constant
+Nit = 100;              % Nit : number of iterations
+mu = 5;                 % mu : ADMM parameter
+
+% Run basis pursuit algorithm
+[c, cost] = bp_salsa(x, H, HT, p, mu, Nit);
+
+%%
+% Verify reconstruction of basis pursuit solution
+
+err = x - A(c,M,N);
+err_max = max(abs(err));
+fprintf('Basis pursuit: Maximum reconstruction error = %g\n', err_max);
+
+%%
+% Display cost function history of basis pursuit algorithm
+
+figure(1)
+clf
+subplot(3,3,[1 2 4 5])
+plot(cost)
+mytitle('Cost function history');
+xlabel('Iteration')
+it1 = 4;
+del = cost(it1) - min(cost);
+ylim([min(cost)-0.1*del cost(it1)])
+xlim([0 Nit])
+box off
+printme('CostFunction')
+
+%%
+% Display Fourier coefficients obtained by basis pursuit
+
+figure(2)
+clf
+subplot(2,1,1)
+stem(0:N-1, abs(c), 'marker','none')
+mytitle('(C) Fourier coefficients (basis pursuit solution)');
+xlabel('Frequency (index)')
+box off
+xlim([0 N])
+printme('BasisPursuit')
+
+%%
+
+MyGraphPrefsOFF
+
+
+##### SOURCE END #####
+-->
+   </body>
+</html>

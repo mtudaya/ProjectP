@@ -1,0 +1,5 @@
+
+% set(0,'DefaultAxesColorOrder',[0 0 0])  % force all plots to be black
+% set(0,'DefaultAxesColorOrder','remove')
+
+

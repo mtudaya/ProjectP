@@ -1,0 +1,330 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   
+      <!--
+This HTML is auto-generated from an M-file.
+To make changes, update the M-file and republish this document.
+      -->
+      <title>Example: Basis pursuit denoising (BPD)</title>
+      <meta name="generator" content="MATLAB 7.8">
+      <meta name="date" content="2012-05-24">
+      <meta name="m-file" content="Example_BPD"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head>
+   <body>
+      <div class="content">
+         <h1>Example: Basis pursuit denoising (BPD)</h1>
+         <!--introduction-->
+         <p>In this example, a noisy speech waveform is denoised using basis pursuit denoising (BPD) and an oversampled DFT.</p><pre>Ivan Selesnick
+NYU-Poly
+selesi@poly.edu
+March 2012</pre>
+         <!--/introduction--><h2>Contents</h2>
+         <div>
+            <ul>
+               <li><a href="#1">Start</a></li>
+               <li><a href="#2">Load signal</a></li>
+               <li><a href="#3">Make noisy signal</a></li>
+               <li><a href="#4">Spectrum of noisy signal</a></li>
+               <li><a href="#5">Basis pursuit denoising</a></li>
+               <li><a href="#8">Compute denoised signal</a></li>
+            </ul>
+         </div>
+         <h2>Start<a name="1"></a></h2><pre class="codeinput">close <span class="string">all</span>
+clear
+MyGraphPrefsON
+
+printme = @(txt) print(<span class="string">'-deps'</span>, sprintf(<span class="string">'figures/Example_BPD_%s'</span>,txt));
+
+randn(<span class="string">'state'</span>,0);       <span class="comment">% set state so as to exactly reproduce example</span>
+</pre><h2>Load signal<a name="2"></a></h2>
+         <p>Load speech waveform data</p><pre class="codeinput">[sp1, fs] = wavread(<span class="string">'data/sp1.wav'</span>);
+
+M = 500;                        <span class="comment">% M : length of signal</span>
+s = sp1(5500+(1:M));            <span class="comment">% s : signal (without noise)</span>
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(s)
+box <span class="string">off</span>
+title(<span class="string">'Speech waveform'</span>)
+
+fprintf(<span class="string">'Sampling rate: %d samples/second \n'</span>, fs)
+</pre><pre class="codeoutput">Sampling rate: 16000 samples/second 
+</pre><img vspace="5" hspace="5" src="Example_BPD_01.png" alt=""> <h2>Make noisy signal<a name="3"></a></h2>
+         <p>Make noisy signal by adding white Gaussian noise</p><pre class="codeinput">w = 0.1 * randn(M,1);      <span class="comment">% w : zero-mean Gaussian noise</span>
+y = s + w;                 <span class="comment">% y : noisy speech signal</span>
+
+figure(2)
+clf
+subplot(2,1,1)
+plot(y)
+box <span class="string">off</span>
+ylim1 = [-0.5 0.7];
+ylim(ylim1);
+mytitle(<span class="string">'Noisy signal'</span>);
+xlabel(<span class="string">'Time (samples)'</span>)
+printme(<span class="string">'noisy'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BPD_02.png" alt=""> <h2>Spectrum of noisy signal<a name="4"></a></h2>
+         <p>Compute the spectrum of the noisy signal 'y' using the oversampled DFT.</p><pre class="codeinput">N = 2^10;                   <span class="comment">% N : Length of Fourier coefficient vector</span>
+
+Y = (1/N)*fft(y,N);         <span class="comment">% Y : Spectrum of noisy signal</span>
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(abs(Y))
+xlim([0 N/2])
+box <span class="string">off</span>
+mytitle(<span class="string">'(A) Fourier coefficients (FFT) of noisy signal'</span>);
+xlabel(<span class="string">'Frequency (index)'</span>)
+printme(<span class="string">'noisy_spectrum'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BPD_03.png" alt=""> <h2>Basis pursuit denoising<a name="5"></a></h2>
+         <p>Perform basis pursuit denoising using iteratitive algorithm.</p><pre class="codeinput"><span class="comment">% Define functions (Matlab function handles)</span>
+H = @(x) A(x,M,N);          <span class="comment">% H : converts coefficients to signal</span>
+HT = @(x) AT(x,M,N);        <span class="comment">% HT : converts signal to coefficients</span>
+p = N;                      <span class="comment">% p : Parseval constant H*HT = p*Identity</span>
+
+<span class="comment">% Define algorithm parameters</span>
+lambda = 7;                 <span class="comment">% lambda : regularization parameter</span>
+Nit = 50;                   <span class="comment">% Nit : number of iterations</span>
+mu = 500;                   <span class="comment">% mu : ADMM parameter</span>
+
+<span class="comment">% Run BPD algorithm</span>
+[c, cost] = bpd_salsa(y, H, HT, p, lambda, mu, Nit);
+</pre><p>Display cost function history of BPD algorithm</p><pre class="codeinput">figure(1)
+clf
+plot(cost)
+mytitle(<span class="string">'Cost function history'</span>);
+xlabel(<span class="string">'Iteration'</span>)
+it1 = 5;
+del = cost(it1) - min(cost);
+ylim([min(cost)-0.1*del cost(it1)])
+xlim([0 Nit])
+box <span class="string">off</span>
+printme(<span class="string">'CostFunction'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BPD_04.png" alt=""> <p>Display BPD Fourier coefficients</p><pre class="codeinput">figure(1)
+clf
+subplot(2,1,1)
+plot(abs(c))
+xlim([0 N/2])
+box <span class="string">off</span>
+mytitle(<span class="string">'(B) Fourier coefficients (BPD solution)'</span>);
+xlabel(<span class="string">'Frequency (index)'</span>)
+printme(<span class="string">'bpd_spectrum'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BPD_05.png" alt=""> <h2>Compute denoised signal<a name="8"></a></h2><pre class="codeinput">g = H(c);
+g = real(g);
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(g)
+box <span class="string">off</span>
+ylim(ylim1);
+mytitle(<span class="string">'Denoising using BPD'</span>);
+xlabel(<span class="string">'Time (samples)'</span>)
+printme(<span class="string">'BPD'</span>)
+</pre><img vspace="5" hspace="5" src="Example_BPD_06.png" alt=""> <pre class="codeinput">MyGraphPrefsOFF
+</pre><p class="footer"><br>
+            Published with MATLAB&reg; 7.8<br></p>
+      </div>
+      <!--
+##### SOURCE BEGIN #####
+%% Example: Basis pursuit denoising (BPD)
+% In this example, a noisy speech waveform is denoised using basis pursuit
+% denoising (BPD) and an oversampled DFT.
+%
+%  Ivan Selesnick
+% NYU-Poly
+% selesi@poly.edu
+% March 2012
+
+%% Start
+
+close all
+clear
+MyGraphPrefsON
+
+printme = @(txt) print('-deps', sprintf('figures/Example_BPD_%s',txt));
+
+randn('state',0);       % set state so as to exactly reproduce example
+
+%% Load signal
+% Load speech waveform data
+
+[sp1, fs] = wavread('data/sp1.wav');
+
+M = 500;                        % M : length of signal
+s = sp1(5500+(1:M));            % s : signal (without noise)
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(s)
+box off
+title('Speech waveform')
+
+fprintf('Sampling rate: %d samples/second \n', fs)
+
+%% Make noisy signal
+% Make noisy signal by adding white Gaussian noise
+
+w = 0.1 * randn(M,1);      % w : zero-mean Gaussian noise
+y = s + w;                 % y : noisy speech signal
+
+figure(2)
+clf
+subplot(2,1,1)
+plot(y)
+box off
+ylim1 = [-0.5 0.7];
+ylim(ylim1);
+mytitle('Noisy signal');
+xlabel('Time (samples)')
+printme('noisy')
+
+
+%% Spectrum of noisy signal
+% Compute the spectrum of the noisy signal 'y' using the oversampled DFT.
+
+N = 2^10;                   % N : Length of Fourier coefficient vector
+
+Y = (1/N)*fft(y,N);         % Y : Spectrum of noisy signal
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(abs(Y))
+xlim([0 N/2])
+box off
+mytitle('(A) Fourier coefficients (FFT) of noisy signal');
+xlabel('Frequency (index)')
+printme('noisy_spectrum')
+
+
+%% Basis pursuit denoising 
+% Perform basis pursuit denoising using iteratitive algorithm.
+
+% Define functions (Matlab function handles)
+H = @(x) A(x,M,N);          % H : converts coefficients to signal
+HT = @(x) AT(x,M,N);        % HT : converts signal to coefficients
+p = N;                      % p : Parseval constant H*HT = p*Identity
+
+% Define algorithm parameters
+lambda = 7;                 % lambda : regularization parameter
+Nit = 50;                   % Nit : number of iterations
+mu = 500;                   % mu : ADMM parameter
+
+% Run BPD algorithm
+[c, cost] = bpd_salsa(y, H, HT, p, lambda, mu, Nit);
+
+%%
+% Display cost function history of BPD algorithm
+
+figure(1)
+clf
+plot(cost)
+mytitle('Cost function history');
+xlabel('Iteration')
+it1 = 5;
+del = cost(it1) - min(cost);
+ylim([min(cost)-0.1*del cost(it1)])
+xlim([0 Nit])
+box off
+printme('CostFunction')
+
+%% 
+% Display BPD Fourier coefficients
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(abs(c))
+xlim([0 N/2])
+box off
+mytitle('(B) Fourier coefficients (BPD solution)');
+xlabel('Frequency (index)')
+printme('bpd_spectrum')
+
+%% Compute denoised signal
+
+g = H(c);
+g = real(g);
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(g)
+box off
+ylim(ylim1);
+mytitle('Denoising using BPD');
+xlabel('Time (samples)')
+printme('BPD')
+
+%%
+
+MyGraphPrefsOFF
+
+##### SOURCE END #####
+-->
+   </body>
+</html>

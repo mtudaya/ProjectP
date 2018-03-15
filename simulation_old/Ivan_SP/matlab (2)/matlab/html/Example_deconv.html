@@ -1,0 +1,349 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   
+      <!--
+This HTML is auto-generated from an M-file.
+To make changes, update the M-file and republish this document.
+      -->
+      <title>Example: Deconvolution using BPD</title>
+      <meta name="generator" content="MATLAB 7.8">
+      <meta name="date" content="2012-05-24">
+      <meta name="m-file" content="Example_deconv"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head>
+   <body>
+      <div class="content">
+         <h1>Example: Deconvolution using BPD</h1>
+         <!--introduction-->
+         <p>Deconvolution of a spike signal using basis pursuit denoising.</p><pre>Ivan Selesnick
+NYU-Poly
+selesi@poly.edu
+March 2012</pre>
+         <!--/introduction--><h2>Contents</h2>
+         <div>
+            <ul>
+               <li><a href="#1">Start</a></li>
+               <li><a href="#2">Create spike signal</a></li>
+               <li><a href="#3">Create observed signal</a></li>
+               <li><a href="#4">Create convolution matrix H</a></li>
+               <li><a href="#7">Least square solution</a></li>
+               <li><a href="#8">Basis pursuit denoising (BPD) solution</a></li>
+            </ul>
+         </div>
+         <h2>Start<a name="1"></a></h2><pre class="codeinput">close <span class="string">all</span>
+clear
+MyGraphPrefsON
+
+printme = @(txt) print(<span class="string">'-deps'</span>, sprintf(<span class="string">'figures/Example_deconv_%s'</span>,txt));
+
+randn(<span class="string">'state'</span>,0);           <span class="comment">% set state so as to exactly reproduce example</span>
+</pre><h2>Create spike signal<a name="2"></a></h2><pre class="codeinput">N = 100;                    <span class="comment">% N : length of signal</span>
+s = zeros(N,1);
+k = [20 45 70];
+a = [2 -1 1];
+s(k) = a;
+
+figure(1)
+clf
+subplot(2,1,1)
+stem(s, <span class="string">'marker'</span>, <span class="string">'none'</span>)
+box <span class="string">off</span>
+mytitle(<span class="string">'Sparse signal'</span>);
+ylim1 = [-1.5 2.5];
+ylim(ylim1)
+xlabel(<span class="string">' '</span>)
+printme(<span class="string">'original'</span>)
+</pre><img vspace="5" hspace="5" src="Example_deconv_01.png" alt=""> <h2>Create observed signal<a name="3"></a></h2>
+         <p>The simulated observed signal is obtained by convolving the signal with a 4-point impulse response and adding noise.</p><pre class="codeinput">L = 4;
+h = ones(L,1)/L;           <span class="comment">% h : impulse response</span>
+
+M = N + L - 1;
+w = 0.03 * randn(M,1);     <span class="comment">% w : zero-mean Gaussian noise</span>
+y = conv(h,s) + w;         <span class="comment">% y : observed data</span>
+
+figure(2)
+clf
+subplot(2,1,1)
+plot(y)
+box <span class="string">off</span>
+xlim([0 M])
+mytitle(<span class="string">'Observed signal'</span>);
+xlabel(<span class="string">' '</span>)
+printme(<span class="string">'observed'</span>)
+</pre><img vspace="5" hspace="5" src="Example_deconv_02.png" alt=""> <h2>Create convolution matrix H<a name="4"></a></h2>
+         <p>Create the convolution matrix using Matlab sparse matrix functions 'sparse' and 'spdiags'.  By making it a sparse matrix,
+            H uses less memory; multiplying vectors by H will is also faster.
+         </p><pre class="codeinput">H = sparse(M,N);
+e = ones(N,1);
+<span class="keyword">for</span> i = 0:L-1
+    H = H + spdiags(h(i+1)*e, -i, M, N);            <span class="comment">% H : convolution matrix (sparse)</span>
+<span class="keyword">end</span>
+issparse(H)                                         <span class="comment">% confirm that H is a sparse matrix</span>
+</pre><pre class="codeoutput">
+ans =
+
+     1
+
+</pre><p>Verify that H*s is the same as conv(h,s)</p><pre class="codeinput">err = H*s - conv(h,s);
+max_err = max(abs(err));
+fprintf(<span class="string">'Maximum error = %g\n'</span>, max_err)
+</pre><pre class="codeoutput">Maximum error = 0
+</pre><p>Display structure of convolution matrix. Note that the matrix is banded (sparse).</p><pre class="codeinput">figure(1)
+clf
+spy(H(1:24,1:21))
+</pre><img vspace="5" hspace="5" src="Example_deconv_03.png" alt=""> <h2>Least square solution<a name="7"></a></h2>
+         <p>Find the least square solution to the deconvolution problem.</p><pre class="codeinput">lambda = 0.4;                                       <span class="comment">% lambda : regularization parameter</span>
+
+x_L2 = (H'*H + lambda*speye(N)) \ (H' * y);         <span class="comment">% x_L2 : least square solution</span>
+
+figure(2)
+clf
+subplot(2,1,1)
+stem(x_L2, <span class="string">'marker'</span>, <span class="string">'none'</span>)
+box <span class="string">off</span>
+mytitle(<span class="string">'Deconvolution (least square solution)'</span>);
+xlabel(<span class="string">' '</span>)
+printme(<span class="string">'L2'</span>)
+</pre><img vspace="5" hspace="5" src="Example_deconv_04.png" alt=""> <h2>Basis pursuit denoising (BPD) solution<a name="8"></a></h2>
+         <p>Find the BPD solution to the deconvolution problem</p><pre class="codeinput"><span class="comment">% Define algorithm parameters</span>
+lambda = 0.05;                                      <span class="comment">% lambda : regularization parameter</span>
+Nit = 50;                                           <span class="comment">% Nit : number of iterations</span>
+mu = 0.2;                                           <span class="comment">% mu : ADMM parameter</span>
+
+<span class="comment">% Run BPD algorithm</span>
+[x_BPD, cost] = bpd_salsa_sparsemtx(y, H, lambda, mu, Nit);
+</pre><p>Display cost function history of BPD algorithms</p><pre class="codeinput">figure(1)
+clf
+plot(cost)
+mytitle(<span class="string">'Cost function history'</span>);
+xlabel(<span class="string">'Iteration'</span>)
+it1 = 5;
+del = cost(it1) - min(cost);
+ylim([min(cost)-0.1*del cost(it1)])
+xlim([0 Nit])
+box <span class="string">off</span>
+printme(<span class="string">'CostFunction'</span>)
+</pre><img vspace="5" hspace="5" src="Example_deconv_05.png" alt=""> <p>The BPD solution is quite similar to the original signal (much more so than the least square solution).</p><pre class="codeinput">figure(2)
+clf
+subplot(2,1,1)
+stem(x_BPD, <span class="string">'marker'</span>, <span class="string">'none'</span>)
+box <span class="string">off</span>
+ylim(ylim1);
+mytitle(<span class="string">'Deconvolution (BPD solution)'</span>);
+xlabel(<span class="string">' '</span>)
+printme(<span class="string">'BPD'</span>)
+</pre><img vspace="5" hspace="5" src="Example_deconv_06.png" alt=""> <pre class="codeinput">MyGraphPrefsOFF
+</pre><p class="footer"><br>
+            Published with MATLAB&reg; 7.8<br></p>
+      </div>
+      <!--
+##### SOURCE BEGIN #####
+%% Example: Deconvolution using BPD
+% Deconvolution of a spike signal using basis pursuit denoising.
+%
+%  Ivan Selesnick
+% NYU-Poly
+% selesi@poly.edu
+% March 2012
+
+%% Start
+
+close all
+clear
+MyGraphPrefsON
+
+printme = @(txt) print('-deps', sprintf('figures/Example_deconv_%s',txt));
+
+randn('state',0);           % set state so as to exactly reproduce example
+
+%% Create spike signal
+
+N = 100;                    % N : length of signal
+s = zeros(N,1);
+k = [20 45 70];
+a = [2 -1 1];
+s(k) = a;
+
+figure(1)
+clf
+subplot(2,1,1)
+stem(s, 'marker', 'none')
+box off
+mytitle('Sparse signal');
+ylim1 = [-1.5 2.5];
+ylim(ylim1)
+xlabel(' ')
+printme('original')
+
+%% Create observed signal
+% The simulated observed signal is obtained by convolving
+% the signal with a 4-point impulse response and adding noise.
+
+L = 4;
+h = ones(L,1)/L;           % h : impulse response
+
+M = N + L - 1;
+w = 0.03 * randn(M,1);     % w : zero-mean Gaussian noise
+y = conv(h,s) + w;         % y : observed data
+
+figure(2)
+clf
+subplot(2,1,1)
+plot(y)
+box off
+xlim([0 M])
+mytitle('Observed signal');
+xlabel(' ')
+printme('observed')
+
+
+%% Create convolution matrix H
+% Create the convolution matrix using Matlab sparse matrix functions
+% 'sparse' and 'spdiags'.  By making it a sparse matrix, H uses
+% less memory; multiplying vectors by H will is also faster.
+
+H = sparse(M,N);
+e = ones(N,1);
+for i = 0:L-1
+    H = H + spdiags(h(i+1)*e, -i, M, N);            % H : convolution matrix (sparse)
+end
+issparse(H)                                         % confirm that H is a sparse matrix
+
+%%
+% Verify that H*s is the same as conv(h,s)
+
+err = H*s - conv(h,s);
+max_err = max(abs(err));
+fprintf('Maximum error = %g\n', max_err)
+
+%%
+% Display structure of convolution matrix.
+% Note that the matrix is banded (sparse).
+
+figure(1)
+clf
+spy(H(1:24,1:21))
+
+%% Least square solution
+% Find the least square solution to the deconvolution problem.
+
+lambda = 0.4;                                       % lambda : regularization parameter
+
+x_L2 = (H'*H + lambda*speye(N)) \ (H' * y);         % x_L2 : least square solution
+
+figure(2)
+clf
+subplot(2,1,1)
+stem(x_L2, 'marker', 'none')
+box off
+mytitle('Deconvolution (least square solution)');
+xlabel(' ')
+printme('L2')
+
+%% Basis pursuit denoising (BPD) solution
+% Find the BPD solution to the deconvolution problem
+
+% Define algorithm parameters
+lambda = 0.05;                                      % lambda : regularization parameter
+Nit = 50;                                           % Nit : number of iterations
+mu = 0.2;                                           % mu : ADMM parameter
+
+% Run BPD algorithm
+[x_BPD, cost] = bpd_salsa_sparsemtx(y, H, lambda, mu, Nit);
+
+%%
+% Display cost function history of BPD algorithms
+
+figure(1)
+clf
+plot(cost)
+mytitle('Cost function history');
+xlabel('Iteration')
+it1 = 5;
+del = cost(it1) - min(cost);
+ylim([min(cost)-0.1*del cost(it1)])
+xlim([0 Nit])
+box off
+printme('CostFunction')
+
+%%
+% The BPD solution is quite similar to the original signal
+% (much more so than the least square solution).
+
+figure(2)
+clf
+subplot(2,1,1)
+stem(x_BPD, 'marker', 'none')
+box off
+ylim(ylim1);
+mytitle('Deconvolution (BPD solution)');
+xlabel(' ')
+printme('BPD')
+
+
+%%
+
+MyGraphPrefsOFF
+
+##### SOURCE END #####
+-->
+   </body>
+</html>

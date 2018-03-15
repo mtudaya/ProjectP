@@ -1,0 +1,375 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   
+      <!--
+This HTML is auto-generated from an M-file.
+To make changes, update the M-file and republish this document.
+      -->
+      <title>Example: Estimation of missing samples using BP</title>
+      <meta name="generator" content="MATLAB 7.8">
+      <meta name="date" content="2012-05-24">
+      <meta name="m-file" content="Example_missing"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head>
+   <body>
+      <div class="content">
+         <h1>Example: Estimation of missing samples using BP</h1>
+         <!--introduction-->
+         <p>Estimate the ramdomly distributed missing samples of a speech waveform using sparsity of Fourier coefficients.</p><pre>Ivan Selesnick
+NYU-Poly
+selesi@poly.edu
+2011</pre>
+         <!--/introduction--><h2>Contents</h2>
+         <div>
+            <ul>
+               <li><a href="#1">Start</a></li>
+               <li><a href="#2">Define oversampled DFT functions</a></li>
+               <li><a href="#5">Load signal data</a></li>
+               <li><a href="#7">Create signal with missing samples</a></li>
+               <li><a href="#8">Esimate missing samples using basis pursuit (BP)</a></li>
+               <li><a href="#10">Display estimated signal and its DFT</a></li>
+            </ul>
+         </div>
+         <h2>Start<a name="1"></a></h2><pre class="codeinput">clear
+close <span class="string">all</span>
+MyGraphPrefsON
+
+printme = @(str) print(<span class="string">'-deps'</span>, sprintf(<span class="string">'figures/Example_missing_%s'</span>, str));
+
+randn(<span class="string">'state'</span>,0);           <span class="comment">% set state so as to exactly reproduce example</span>
+</pre><h2>Define oversampled DFT functions<a name="2"></a></h2>
+         <p>Define oversampled DFT as Matlab function handles.</p><pre class="codeinput">M = 500;                    <span class="comment">% M : length of signal</span>
+N = 2^10;                   <span class="comment">% N : length of Fourier coefficient vector</span>
+
+Afun = @(x) A(x,M,N);       <span class="comment">% Afun : oversampled DFT (Matlab function handle)</span>
+ATfun = @(x) AT(x,M,N);
+p = N;                      <span class="comment">% p : Parseval frame constant</span>
+</pre><p>Verify perfect reconstruction property of A</p><pre class="codeinput">x = rand(M,1);
+err = Afun(ATfun(x)) - p * x;
+fprintf(<span class="string">'Reconstruction error: %e\n'</span>, max(abs(err)))
+</pre><pre class="codeoutput">Reconstruction error: 3.410605e-13
+</pre><p>Verify Parseval property of A</p><pre class="codeinput">X = ATfun(x);
+E1 = sum(abs(x(:)).^2);
+E2 = (1/p)*sum(abs(X(:)).^2);
+fprintf(<span class="string">'E1 - E2 = %e\n'</span>, E1-E2);
+</pre><pre class="codeoutput">E1 - E2 = -8.526513e-14
+</pre><h2>Load signal data<a name="5"></a></h2>
+         <p>Load speech waveform data.</p><pre class="codeinput">[sig,fs] = wavread(<span class="string">'data/sp1.wav'</span>);
+x = sig(5500+(1:M));            <span class="comment">% x: signal</span>
+n = 0:N-1;
+
+X = (1/N)*ATfun(x);             <span class="comment">% X: coefficients signal</span>
+</pre><p>Display signal and its DFT</p><pre class="codeinput">figure(1)
+clf
+subplot(2,1,1)
+plot(x)
+mytitle(<span class="string">'Speech waveform'</span>);
+xlabel(<span class="string">'Time (samples)'</span>)
+box <span class="string">off</span>
+
+ymax = 0.5;
+ymax = 0.6;
+ylim([-1 1]*ymax)
+set(gca,<span class="string">'ytick'</span>,[-0.5 0 0.5])
+
+subplot(2,1,2)
+plot(n, abs(X))
+xlabel(<span class="string">'Frequency (DFT index)'</span>)
+xlim([0 N/2])
+box <span class="string">off</span>
+ax = axis;
+txt = sprintf(<span class="string">'DFT coefficients,  L1 norm = %.2f'</span>,sum(abs(X)));
+mytitle(txt);
+printme(<span class="string">'full_signal'</span>)
+</pre><img vspace="5" hspace="5" src="Example_missing_01.png" alt=""> <h2>Create signal with missing samples<a name="7"></a></h2>
+         <p>Simulate randomly missing values by setting the values of randomly selected signal values to NaN (Not a Number).</p><pre class="codeinput">K = 300;                    <span class="comment">% K : number of known samples</span>
+k = randperm(M);            <span class="comment">% random permutation</span>
+k = k(1:K);                 <span class="comment">% k : indices of known samples</span>
+
+s = false(1,M)';
+s(k) = true;                <span class="comment">% s : logical vector (true for known samples)</span>
+
+y = x;                      <span class="comment">% y : incomplete signal</span>
+y(~s) = nan;                <span class="comment">% Set missing samples to nan (Not a Number)</span>
+
+figure(2)
+clf
+subplot(2,1,1)
+plot(y);
+mytitle(<span class="string">'Incomplete signal'</span>);
+xlabel(<span class="string">'Time (samples)'</span>)
+box <span class="string">off</span>
+ylim([-1 1]*ymax)
+set(gca,<span class="string">'ytick'</span>,[-0.5 0 0.5])
+txt = sprintf(<span class="string">'%d missing samples'</span>, M-K);
+text(0.05, 0.99, txt, <span class="string">'units'</span>, <span class="string">'normalized'</span>, <span class="string">'horizontalalignment'</span>, <span class="string">'left'</span> );
+printme(<span class="string">'incomplete_signal'</span>)
+</pre><img vspace="5" hspace="5" src="Example_missing_02.png" alt=""> <h2>Esimate missing samples using basis pursuit (BP)<a name="8"></a></h2>
+         <p>Run the iterative algorithm to minimize the L1 norm of the Fourier coefficients c subject to the constraint that the reconstructed
+            signal is consistent with the known (available) signal values.
+         </p><pre class="codeinput"><span class="comment">% Define algorithm parameters</span>
+mu = 15;                    <span class="comment">% mu : augmented Lagrangian parameter</span>
+Nit = 100;                  <span class="comment">% Nit : number of iterations</span>
+
+<span class="comment">% Run basis pursuit algorithm for missing samples</span>
+[c, cost] = bp_missing(y, Afun, ATfun, p, s, mu, Nit);
+
+g = Afun(c);                <span class="comment">% g : estimated signal</span>
+</pre><p>Display cost function history of BP algorithm</p><pre class="codeinput">figure(3)
+clf
+plot(1:Nit, cost)
+mytitle(<span class="string">'Cost function'</span>);
+xlabel(<span class="string">'Iteration'</span>)
+box <span class="string">off</span>
+xlim([0 Nit])
+printme(<span class="string">'cost'</span>)
+</pre><img vspace="5" hspace="5" src="Example_missing_03.png" alt=""> <h2>Display estimated signal and its DFT<a name="10"></a></h2>
+         <p>Note that the missing samples have been filled in with realistic values.</p><pre class="codeinput">figure(4)
+clf
+subplot(2,1,1)
+plot(n, abs(c))
+txt = <span class="string">'Estimated coefficients'</span>;
+mytitle(txt);
+box <span class="string">off</span>
+xlim([0 N/2])
+xlabel(<span class="string">'Frequency (DFT index)'</span>)
+
+subplot(2,1,2)
+plot(g)
+mytitle(<span class="string">'Estimated signal'</span>);
+xlabel(<span class="string">'Time (samples)'</span>)
+box <span class="string">off</span>
+ylim([-1 1]*ymax)
+set(gca,<span class="string">'ytick'</span>,[-0.5 0 0.5])
+printme(<span class="string">'estimate'</span>)
+</pre><img vspace="5" hspace="5" src="Example_missing_04.png" alt=""> <pre class="codeinput">MyGraphPrefsOFF
+</pre><p class="footer"><br>
+            Published with MATLAB&reg; 7.8<br></p>
+      </div>
+      <!--
+##### SOURCE BEGIN #####
+%% Example: Estimation of missing samples using BP
+% Estimate the ramdomly distributed missing samples of a speech waveform 
+% using sparsity of Fourier coefficients.
+%
+%  Ivan Selesnick
+% NYU-Poly
+% selesi@poly.edu
+% 2011
+
+%% Start
+
+clear
+close all
+MyGraphPrefsON
+
+printme = @(str) print('-deps', sprintf('figures/Example_missing_%s', str));
+
+randn('state',0);           % set state so as to exactly reproduce example
+
+
+%% Define oversampled DFT functions
+% Define oversampled DFT as Matlab function handles.
+
+M = 500;                    % M : length of signal
+N = 2^10;                   % N : length of Fourier coefficient vector
+
+Afun = @(x) A(x,M,N);       % Afun : oversampled DFT (Matlab function handle)
+ATfun = @(x) AT(x,M,N);
+p = N;                      % p : Parseval frame constant
+
+%%
+% Verify perfect reconstruction property of A
+x = rand(M,1);
+err = Afun(ATfun(x)) - p * x;
+fprintf('Reconstruction error: %e\n', max(abs(err)))
+
+%%
+% Verify Parseval property of A
+X = ATfun(x);
+E1 = sum(abs(x(:)).^2);
+E2 = (1/p)*sum(abs(X(:)).^2);
+fprintf('E1 - E2 = %e\n', E1-E2);
+
+
+%% Load signal data
+% Load speech waveform data.
+
+[sig,fs] = wavread('data/sp1.wav');
+x = sig(5500+(1:M));            % x: signal
+n = 0:N-1;  
+
+X = (1/N)*ATfun(x);             % X: coefficients signal
+
+%%
+% Display signal and its DFT 
+
+figure(1)
+clf
+subplot(2,1,1)
+plot(x)
+mytitle('Speech waveform');
+xlabel('Time (samples)')
+box off
+
+ymax = 0.5;
+ymax = 0.6;
+ylim([-1 1]*ymax)
+set(gca,'ytick',[-0.5 0 0.5])
+
+subplot(2,1,2)
+plot(n, abs(X))
+xlabel('Frequency (DFT index)')
+xlim([0 N/2])
+box off
+ax = axis;
+txt = sprintf('DFT coefficients,  L1 norm = %.2f',sum(abs(X)));
+mytitle(txt);
+printme('full_signal')
+
+%% Create signal with missing samples
+% Simulate randomly missing values by setting the values of
+% randomly selected signal values to NaN (Not a Number).
+
+K = 300;                    % K : number of known samples
+k = randperm(M);            % random permutation
+k = k(1:K);                 % k : indices of known samples
+
+s = false(1,M)';
+s(k) = true;                % s : logical vector (true for known samples)
+
+y = x;                      % y : incomplete signal
+y(~s) = nan;                % Set missing samples to nan (Not a Number)
+
+figure(2)
+clf
+subplot(2,1,1)
+plot(y);
+mytitle('Incomplete signal');
+xlabel('Time (samples)')
+box off
+ylim([-1 1]*ymax)
+set(gca,'ytick',[-0.5 0 0.5])
+txt = sprintf('%d missing samples', M-K);
+text(0.05, 0.99, txt, 'units', 'normalized', 'horizontalalignment', 'left' );
+printme('incomplete_signal')
+
+
+%% Esimate missing samples using basis pursuit (BP)
+% Run the iterative algorithm to minimize the L1 norm of
+% the Fourier coefficients c subject to the constraint
+% that the reconstructed signal is consistent with the
+% known (available) signal values.
+
+% Define algorithm parameters
+mu = 15;                    % mu : augmented Lagrangian parameter
+Nit = 100;                  % Nit : number of iterations
+
+% Run basis pursuit algorithm for missing samples
+[c, cost] = bp_missing(y, Afun, ATfun, p, s, mu, Nit);
+
+g = Afun(c);                % g : estimated signal
+
+%%
+% Display cost function history of BP algorithm
+
+figure(3)
+clf
+plot(1:Nit, cost)
+mytitle('Cost function');
+xlabel('Iteration')
+box off
+xlim([0 Nit])
+printme('cost')
+
+
+%% Display estimated signal and its DFT
+% Note that the missing samples have been filled in
+% with realistic values.
+
+figure(4)
+clf
+subplot(2,1,1)
+plot(n, abs(c))
+txt = 'Estimated coefficients';
+mytitle(txt);
+box off
+xlim([0 N/2])
+xlabel('Frequency (DFT index)')
+
+subplot(2,1,2)
+plot(g)
+mytitle('Estimated signal');
+xlabel('Time (samples)')
+box off
+ylim([-1 1]*ymax)
+set(gca,'ytick',[-0.5 0 0.5])
+printme('estimate')
+
+
+%%
+
+MyGraphPrefsOFF
+
+##### SOURCE END #####
+-->
+   </body>
+</html>

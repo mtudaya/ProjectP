@@ -1,0 +1,19 @@
+% Relative amplitude distribution
+% relative amplitude represents surface rougnness
+% exponential distribution
+%pdf(A)=1/mu exp (-A/mu);
+function[A]=Relative_amp(A_mu)
+A_mu=0.246;
+pdf_A = makedist('Exponential','mu', A_mu);
+r=0;
+
+r=random(pdf_A)+1;
+if r>1
+    while r < 1
+        r=random(pdf_A)
+    end
+end
+
+
+
+return
